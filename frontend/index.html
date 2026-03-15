@@ -370,7 +370,12 @@ function go(v, btn) {
   }
 }
 
+async function acordarBackend() {
+  try { await fetch(BACKEND + "/health"); } catch(e) {}
+}
+
 async function buscarPNCP() {
+  await acordarBackend();
   var url = document.getElementById('inp1').value.trim();
   if (!url) { toast('Cole o link do edital.', 'err'); return; }
   if (!BACKEND) { toast('Configure o backend em ⚙️ Config primeiro.', 'err'); return; }
@@ -722,6 +727,7 @@ function fmtDt(s){if(!s)return'—';try{var d=new Date(s);return d.toLocaleDateS
 function toast(msg,type){var t=document.getElementById('toast');t.textContent=(type==='ok'?'✓ ':'⚠ ')+msg;t.className='toast show '+(type||'');setTimeout(function(){t.className='toast';},3200);}
 
 (function init(){
+  if(BACKEND){acordarBackend();setInterval(acordarBackend,600000);}
   atualizarBadge(); renderCal();
   if (BACKEND) carregarSalvos();
   if(recentes.length){
