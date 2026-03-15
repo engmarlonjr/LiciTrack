@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
@@ -8,6 +9,28 @@ app.use(express.json({ limit: '20mb' }));
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+
+// ── BANCO DE DADOS ───────────────────────────────────────
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+async function initDB() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS salvos (
+        id TEXT PRIMARY KEY,
+        dados JSONB NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('Banco de dados inicializado');
+  } catch(e) {
+    console.error('Erro ao inicializar banco:', e.message);
+  }
+}
 
 // ── BUSCA DADOS DO PNCP ──────────────────────────────────
 app.get('/api/pncp', async (req, res) => {
@@ -58,5 +81,44 @@ app.post('/api/analisar', async (req, res) => {
   }
 });
 
+// ── SALVOS — LISTAR ──────────────────────────────────────
+app.get('/api/salvos', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT dados FROM salvos ORDER BY atualizado_em DESC');
+    res.json(result.rows.map(r => r.dados));
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── SALVOS — ADICIONAR/ATUALIZAR ─────────────────────────
+app.post('/api/salvos', async (req, res) => {
+  const { id, dados } = req.body;
+  if (!id || !dados) return res.status(400).json({ error: 'Dados inválidos' });
+  try {
+    await pool.query(`
+      INSERT INTO salvos (id, dados, atualizado_em)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (id) DO UPDATE SET dados = $2, atualizado_em = NOW()
+    `, [id, dados]);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── SALVOS — REMOVER ─────────────────────────────────────
+app.delete('/api/salvos/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM salvos WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/health', (req, res) => res.json({ ok: true }));
-app.listen(PORT, () => console.log(`Licitrack backend rodando na porta ${PORT}`));
+
+initDB().then(() => {
+  app.listen(PORT, () => console.log(`Licitrack backend rodando na porta ${PORT}`));
+});
