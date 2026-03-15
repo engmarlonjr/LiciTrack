@@ -366,8 +366,8 @@ async function buscarPNCP() {
     _dadosAtual._urlOrigem = url;
     document.getElementById('p1').className = 'step-pill done';
     document.getElementById('p1').textContent = '✓';
-    document.getElementById('card2').style.display = 'block';
-    document.getElementById('card2').scrollIntoView({behavior:'smooth', block:'start'});
+    
+    
     toast('Dados do PNCP carregados!', 'ok');
   } catch(e) {
     toast('Erro ao buscar: ' + e.message, 'err');
@@ -484,9 +484,9 @@ async function chamarAnalise(documentos) {
   secao.style.display = 'block';
   var cardEl = criarCard(cardData, cardN);
   document.getElementById('resultados').prepend(cardEl);
-  document.getElementById('card2').style.display = 'none';
-  document.getElementById('p2').className = 'step-pill done';
-  document.getElementById('p2').textContent = '✓';
+  
+  
+  
   _fileParaAnalisar = null;
   document.getElementById('file-list').innerHTML = '';
   document.getElementById('btn-docs').style.display = 'none';
