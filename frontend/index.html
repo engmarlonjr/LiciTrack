@@ -209,33 +209,6 @@ nav{padding:14px 10px;flex:1}
           </div>
         </div>
       </div>
-      <div class="flow-card" id="card2" style="display:none">
-        <div class="flow-head">
-          <div class="step-pill" id="p2">2</div>
-          <div class="flow-head-info">
-            <h3>Anexe os documentos do edital <span style="color:var(--txt3);font-weight:400;font-size:.72rem">(opcional)</span></h3>
-            <p>Envie um arquivo por vez para melhor desempenho</p>
-          </div>
-        </div>
-        <div class="flow-body">
-          <div class="doc-hint">💡 <strong>Dica:</strong> Envie um arquivo por vez. PDFs grandes podem levar 1-2 minutos para analisar. O mais importante é o edital principal.</div>
-          <div class="upload-zone" id="upload-zone"
-            onclick="document.getElementById('file-input').click()"
-            ondragover="event.preventDefault();this.classList.add('drag')"
-            ondragleave="this.classList.remove('drag')"
-            ondrop="onDrop(event)">
-            <div class="uz-icon">📎</div>
-            <h4>Clique para selecionar o arquivo</h4>
-            <p>PDF, XLSX, XLS • 1 arquivo por vez • Máx. 8MB</p>
-          </div>
-          <input type="file" id="file-input" accept=".pdf,.xlsx,.xls" style="display:none" onchange="onFileSelect(event)">
-          <div class="file-list" id="file-list"></div>
-          <div class="row">
-            <button class="btn btn-lime" id="btn-docs" onclick="analisarComDoc()" style="display:none">Analisar documento →</button>
-            <button class="btn btn-ghost" onclick="analisarSemDocs()">Analisar sem documento</button>
-          </div>
-        </div>
-      </div>
       <div id="recentes-section" style="display:none">
         <div class="sec-header"><h3>PROCESSOS RECENTES</h3></div>
         <div id="resultados"></div>
