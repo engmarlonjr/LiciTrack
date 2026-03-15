@@ -368,7 +368,8 @@ async function buscarPNCP() {
     document.getElementById('p1').textContent = '✓';
     
     
-    toast('Dados do PNCP carregados!', 'ok');
+    toast('Dados do PNCP carregados! Buscando documentos...', 'ok');
+    chamarAnalise([]);
   } catch(e) {
     toast('Erro ao buscar: ' + e.message, 'err');
   }
