@@ -523,7 +523,7 @@ async function chamarAnalise(documentos) {
     var resp = await fetch(BACKEND + '/api/analisar', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ dados, documentos })
+      body: JSON.stringify({ dados, documentos, urlEdital: dados._urlOrigem })
     });
     var ai = await resp.json();
     if (ai.resumo)       cardData.resumo       = ai.resumo;
