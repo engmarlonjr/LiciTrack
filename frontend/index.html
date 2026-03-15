@@ -24,7 +24,6 @@ nav{padding:14px 10px;flex:1}
 .sidebar-foot{padding:10px;border-top:1px solid var(--b1)}
 .sidebar-foot-btn{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:7px;background:none;border:none;color:var(--txt3);font-family:'Barlow',sans-serif;font-size:.78rem;cursor:pointer;text-align:left;transition:all .15s;margin-bottom:2px}
 .sidebar-foot-btn:hover{background:var(--s2);color:var(--txt)}
-.sidebar-foot-btn .ico{font-size:.85rem;width:18px;text-align:center}
 .main-wrap{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
 .topbar{padding:16px 28px;border-bottom:1px solid var(--b1);background:rgba(7,9,13,.85);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .topbar-title{font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:700;letter-spacing:.05em}
@@ -166,6 +165,8 @@ nav{padding:14px 10px;flex:1}
 .config-status{font-size:.72rem;padding:4px 10px;border-radius:5px;font-family:'Fira Code',monospace}
 .config-status.ok{background:rgba(200,241,53,.1);color:var(--lime);border:1px solid rgba(200,241,53,.3)}
 .config-status.err{background:rgba(241,69,53,.1);color:var(--red);border:1px solid rgba(241,69,53,.3)}
+.sync-btn{background:var(--s3);border:1px solid var(--b1);color:var(--txt2);border-radius:6px;padding:5px 10px;font-size:.72rem;cursor:pointer;transition:all .15s}
+.sync-btn:hover{background:var(--s2);color:var(--txt)}
 </style>
 </head>
 <body>
@@ -181,14 +182,13 @@ nav{padding:14px 10px;flex:1}
     <button class="nav-btn" onclick="go('config',this)"><span class="ico">⚙️</span> Config</button>
   </nav>
   <div class="sidebar-foot">
-    <button class="sidebar-foot-btn" onclick="exportarDados()"><span class="ico">📤</span> Exportar</button>
-    <button class="sidebar-foot-btn" onclick="document.getElementById('import-input').click()"><span class="ico">📥</span> Importar</button>
-    <input type="file" id="import-input" accept=".json" style="display:none" onchange="importarDados(event)">
+    <button class="sidebar-foot-btn" onclick="sincronizar()"><span class="ico">🔄</span> Sincronizar</button>
   </div>
 </aside>
 <div class="main-wrap">
   <div class="topbar">
     <div class="topbar-title" id="ttitle">Analisar Processo</div>
+    <div id="sync-status" style="font-size:.72rem;color:var(--txt3);font-family:'Fira Code',monospace"></div>
   </div>
   <div class="scroll">
     <div class="view on" id="v-analisar">
@@ -244,6 +244,9 @@ nav{padding:14px 10px;flex:1}
         <div class="stat"><div class="sl">Valor Total</div><div class="sv lime" id="st-valor">R$ 0</div><div class="ss">soma estimada</div></div>
         <div class="stat"><div class="sl">Vence em Breve</div><div class="sv amber" id="st-prox">—</div><div class="ss">dias para encerrar</div></div>
       </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="sync-btn" onclick="carregarSalvos()">🔄 Atualizar lista</button>
+      </div>
       <div class="saved-list" id="saved-list"></div>
     </div>
     <div class="view" id="v-calendario">
@@ -266,7 +269,7 @@ nav{padding:14px 10px;flex:1}
     <div class="view" id="v-config">
       <div class="config-box">
         <h3>⚙️ Configuração do Backend</h3>
-        <p style="font-size:.78rem;color:var(--txt2);margin-bottom:14px">Cole a URL do seu backend no Render para ativar a busca automática do PNCP.</p>
+        <p style="font-size:.78rem;color:var(--txt2);margin-bottom:14px">URL do backend Render para busca automática e dados compartilhados.</p>
         <div class="config-row" style="margin-bottom:10px">
           <input class="inp" id="backend-url" placeholder="https://licitrack-backend.onrender.com" style="font-size:.78rem" />
           <button class="btn btn-lime" onclick="salvarBackend()">Salvar</button>
@@ -291,7 +294,7 @@ nav{padding:14px 10px;flex:1}
 <div class="toast" id="toast"></div>
 <script>
 var BACKEND = localStorage.getItem('lt_backend') || '';
-var salvos   = JSON.parse(localStorage.getItem('lt_salvos')   || '[]');
+var salvos = [];
 var recentes = JSON.parse(localStorage.getItem('lt_recentes') || '[]');
 var cardN = 0;
 var today = new Date(); today.setHours(0,0,0,0);
@@ -299,8 +302,6 @@ var calY = today.getFullYear(), calM = today.getMonth();
 var _dadosAtual = null;
 var _filesParaAnalisar = [];
 
-function persistir()  { localStorage.setItem('lt_salvos',   JSON.stringify(salvos));   atualizarBadge(); }
-function persistRec() { localStorage.setItem('lt_recentes', JSON.stringify(recentes.slice(0,20))); }
 function atualizarBadge() { document.getElementById('bdg').textContent = salvos.length; }
 
 function salvarBackend() {
@@ -308,9 +309,32 @@ function salvarBackend() {
   if (!url) { toast('Cole a URL do backend.', 'err'); return; }
   localStorage.setItem('lt_backend', url);
   BACKEND = url;
-  var st = document.getElementById('backend-status');
-  st.innerHTML = '<span class="config-status ok">✓ Backend salvo: ' + url + '</span>';
+  document.getElementById('backend-status').innerHTML = '<span class="config-status ok">✓ Backend salvo: ' + url + '</span>';
   toast('Backend configurado!', 'ok');
+  carregarSalvos();
+}
+
+async function carregarSalvos() {
+  if (!BACKEND) return;
+  try {
+    document.getElementById('sync-status').textContent = '⟳ sincronizando...';
+    var resp = await fetch(BACKEND + '/api/salvos');
+    salvos = await resp.json();
+    if (!Array.isArray(salvos)) salvos = [];
+    atualizarBadge();
+    document.getElementById('sync-status').textContent = '✓ ' + salvos.length + ' salvos';
+    setTimeout(function(){ document.getElementById('sync-status').textContent = ''; }, 3000);
+  } catch(e) {
+    document.getElementById('sync-status').textContent = '';
+  }
+}
+
+async function sincronizar() {
+  await carregarSalvos();
+  toast('Lista atualizada!', 'ok');
+  var v = document.querySelector('.nav-btn.on');
+  if (v && v.textContent.includes('Salvos')) renderSalvos();
+  if (v && v.textContent.includes('Calendário')) renderCal();
 }
 
 function fixEnc(str) {
@@ -332,8 +356,8 @@ function go(v, btn) {
   document.getElementById('v-' + v).classList.add('on');
   btn.classList.add('on');
   document.getElementById('ttitle').textContent = titulos[v];
-  if (v === 'salvos')    renderSalvos();
-  if (v === 'calendario') renderCal();
+  if (v === 'salvos')    { carregarSalvos().then(renderSalvos); }
+  if (v === 'calendario') { carregarSalvos().then(renderCal); }
   if (v === 'config') {
     var saved = localStorage.getItem('lt_backend') || '';
     if (saved) {
@@ -363,7 +387,7 @@ async function buscarPNCP() {
     document.getElementById('p1').textContent = '✓';
     document.getElementById('card2').style.display = 'block';
     document.getElementById('card2').scrollIntoView({behavior:'smooth', block:'start'});
-    toast('Dados do PNCP carregados! Anexe documentos ou analise direto.', 'ok');
+    toast('Dados do PNCP carregados!', 'ok');
   } catch(e) {
     toast('Erro ao buscar: ' + e.message, 'err');
   }
@@ -453,7 +477,7 @@ async function chamarAnalise(documentos) {
   };
   recentes = recentes.filter(function(r){return r.id!==cardData.id;});
   recentes.unshift(cardData);
-  persistRec();
+  localStorage.setItem('lt_recentes', JSON.stringify(recentes.slice(0,20)));
   cardN++;
   var secao = document.getElementById('recentes-section');
   secao.style.display = 'block';
@@ -487,9 +511,7 @@ async function chamarAnalise(documentos) {
     }
     recentes = recentes.filter(function(r){return r.id!==cardData.id;});
     recentes.unshift(cardData);
-    persistRec();
-    var si = salvos.findIndex(function(s){return s.id===cardData.id;});
-    if(si>=0){ salvos[si]=cardData; persistir(); }
+    localStorage.setItem('lt_recentes', JSON.stringify(recentes.slice(0,20)));
     toast('Análise completa!', 'ok');
   } catch(e) { toast('Análise com IA falhou: ' + e.message, 'err'); }
 }
@@ -499,6 +521,30 @@ function resetar() {
   document.getElementById('p1').className = 'step-pill';
   document.getElementById('p1').textContent = '1';
   _dadosAtual = null;
+}
+
+async function toggleSalvo(id) {
+  if (!BACKEND) { toast('Configure o backend primeiro.', 'err'); return; }
+  var cardEl = document.getElementById('card-'+id);
+  var d = cardEl ? JSON.parse(cardEl.dataset.json) : recentes.find(function(r){return r.id===id;});
+  var isSalvo = salvos.some(function(s){return s.id===id;});
+  var btn = document.getElementById('sb-'+id);
+  if (isSalvo) {
+    await fetch(BACKEND + '/api/salvos/' + id, { method: 'DELETE' });
+    salvos = salvos.filter(function(s){return s.id!==id;});
+    if(btn){btn.className='lic-btn star';btn.textContent='☆ Salvar';}
+    toast('Removido dos salvos.', 'ok');
+  } else {
+    await fetch(BACKEND + '/api/salvos', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id, dados: d })
+    });
+    salvos.push(d);
+    if(btn){btn.className='lic-btn starred';btn.textContent='⭐ Salvo';}
+    toast('Salvo! Toda a equipe pode ver agora.', 'ok');
+  }
+  atualizarBadge();
 }
 
 function criarCard(d, n) {
@@ -534,16 +580,6 @@ function criarCard(d, n) {
     '</div>'+
     '<div class="lic-foot"><a href="'+(d.linkOri||'#')+'" target="_blank">↗ Compras.gov.br</a><span class="mod-tag">'+d.modal+'</span></div>';
   return el;
-}
-
-function toggleSalvo(id) {
-  var cardEl = document.getElementById('card-'+id);
-  var d = cardEl ? JSON.parse(cardEl.dataset.json) : recentes.find(function(r){return r.id===id;});
-  var idx = salvos.findIndex(function(s){return s.id===id;});
-  var btn = document.getElementById('sb-'+id);
-  if(idx>=0){ salvos.splice(idx,1); if(btn){btn.className='lic-btn star';btn.textContent='☆ Salvar';} toast('Removido dos salvos.','ok'); }
-  else { if(d) salvos.push(d); if(btn){btn.className='lic-btn starred';btn.textContent='⭐ Salvo';} toast('Salvo!','ok'); }
-  persistir();
 }
 
 function abrirModal(d) {
@@ -594,11 +630,18 @@ function renderSalvos() {
       '<div class="dot '+dc+'"></div>'+
       '<div class="saved-info"><div class="saved-title">'+s.objeto+'</div><div class="saved-sub">'+s.codigo+' · '+s.mun+' · '+fmtR(s.val)+'</div></div>'+
       '<div class="saved-right"><div class="saved-date">'+s.dtEncFmt+'<div class="days '+dc+'">'+dl+'</div></div>'+
-      '<button class="rm-btn" onclick="event.stopPropagation();removerSalvo(\''+s.id+'\')">✕</button></div>';
+      '<button class="rm-btn" onclick="event.stopPropagation();removerSalvoDB(\''+s.id+'\')">✕</button></div>';
     list.appendChild(row);
   });
 }
-function removerSalvo(id){ salvos=salvos.filter(function(s){return s.id!==id;}); persistir(); renderSalvos(); toast('Removido.','ok'); }
+
+async function removerSalvoDB(id) {
+  await fetch(BACKEND + '/api/salvos/' + id, { method: 'DELETE' });
+  salvos = salvos.filter(function(s){return s.id!==id;});
+  atualizarBadge();
+  renderSalvos();
+  toast('Removido.', 'ok');
+}
 
 var MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 var DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -645,35 +688,9 @@ function fmtShort(v){if(v>=1e6)return'R$ '+(v/1e6).toFixed(1)+'M';if(v>=1e3)retu
 function fmtDt(s){if(!s)return'—';try{var d=new Date(s);return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}catch(e){return s;}}
 function toast(msg,type){var t=document.getElementById('toast');t.textContent=(type==='ok'?'✓ ':'⚠ ')+msg;t.className='toast show '+(type||'');setTimeout(function(){t.className='toast';},3200);}
 
-function exportarDados() {
-  var dados={versao:'2.0',exportadoEm:new Date().toISOString(),salvos,recentes};
-  var blob=new Blob([JSON.stringify(dados,null,2)],{type:'application/json'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');a.href=url;a.download='licitrack-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);
-  toast('Exportado!','ok');
-}
-function importarDados(event) {
-  var file=event.target.files[0]; if(!file) return;
-  var reader=new FileReader();
-  reader.onload=function(e){
-    try{
-      var dados=JSON.parse(e.target.result);
-      if(!dados.salvos&&!dados.recentes) throw new Error('Formato inválido');
-      if(dados.salvos) dados.salvos.forEach(function(s){if(!salvos.find(function(x){return x.id===s.id;}))salvos.push(s);});
-      if(dados.recentes) dados.recentes.forEach(function(r){if(!recentes.find(function(x){return x.id===r.id;}))recentes.push(r);});
-      persistir(); persistRec();
-      var secao=document.getElementById('recentes-section');
-      if(recentes.length){secao.style.display='block';var res=document.getElementById('resultados');res.innerHTML='';recentes.forEach(function(d,i){res.appendChild(criarCard(d,recentes.length-i));});cardN=recentes.length;}
-      atualizarBadge();
-      toast('Importados: '+(dados.salvos||[]).length+' salvos.','ok');
-    }catch(err){toast('Arquivo inválido.','err');}
-    event.target.value='';
-  };
-  reader.readAsText(file);
-}
-
 (function init(){
   atualizarBadge(); renderCal();
+  if (BACKEND) carregarSalvos();
   if(recentes.length){
     var secao=document.getElementById('recentes-section'); secao.style.display='block';
     var res=document.getElementById('resultados');
