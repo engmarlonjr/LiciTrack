@@ -4,7 +4,7 @@ const fetch = require('node-fetch');
 const { Pool } = require('pg');
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: '*', methods: ['GET','POST','DELETE','OPTIONS'], allowedHeaders: ['Content-Type'] }));
 app.use(express.json({ limit: '50mb' }));
 
 const PORT = process.env.PORT || 3000;
