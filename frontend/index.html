@@ -60,10 +60,12 @@ nav{padding:14px 10px;flex:1}
 .file-item .fi-size{font-family:'Fira Code',monospace;font-size:.68rem;color:var(--txt3);flex-shrink:0}
 .file-item .fi-rm{background:none;border:none;color:var(--txt3);cursor:pointer;font-size:.8rem;padding:2px 5px;transition:color .15s}
 .file-item .fi-rm:hover{color:var(--red)}
+.file-item.processing{border-color:rgba(200,241,53,.3);background:rgba(200,241,53,.03)}
 .file-item.done{border-color:rgba(53,212,241,.3)}
 .file-item.err{border-color:rgba(241,69,53,.3)}
 .fi-status{font-size:.68rem;flex-shrink:0;font-family:'Fira Code',monospace}
 .fi-status.lime{color:var(--lime)}.fi-status.cyan{color:var(--cyan)}.fi-status.red{color:var(--red)}
+.file-progress{font-size:.65rem;color:var(--txt3);margin-top:4px;font-family:'Fira Code',monospace}
 .lic{background:var(--s1);border:1px solid var(--b1);border-radius:12px;overflow:hidden;margin-bottom:14px;animation:fadeUp .28s ease}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .lic-top{padding:14px 18px 12px;border-bottom:1px solid var(--b1);display:flex;gap:12px;align-items:flex-start}
@@ -164,9 +166,9 @@ nav{padding:14px 10px;flex:1}
 .config-row{display:flex;gap:8px;align-items:center}
 .config-status{font-size:.72rem;padding:4px 10px;border-radius:5px;font-family:'Fira Code',monospace}
 .config-status.ok{background:rgba(200,241,53,.1);color:var(--lime);border:1px solid rgba(200,241,53,.3)}
-.config-status.err{background:rgba(241,69,53,.1);color:var(--red);border:1px solid rgba(241,69,53,.3)}
 .sync-btn{background:var(--s3);border:1px solid var(--b1);color:var(--txt2);border-radius:6px;padding:5px 10px;font-size:.72rem;cursor:pointer;transition:all .15s}
 .sync-btn:hover{background:var(--s2);color:var(--txt)}
+.doc-hint{background:rgba(200,241,53,.05);border:1px solid rgba(200,241,53,.15);border-radius:8px;padding:10px 14px;font-size:.73rem;color:var(--txt2);margin-bottom:12px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -212,24 +214,25 @@ nav{padding:14px 10px;flex:1}
           <div class="step-pill" id="p2">2</div>
           <div class="flow-head-info">
             <h3>Anexe os documentos do edital <span style="color:var(--txt3);font-weight:400;font-size:.72rem">(opcional)</span></h3>
-            <p>PDF, planilha orçamentária, projeto básico</p>
+            <p>Envie um arquivo por vez para melhor desempenho</p>
           </div>
         </div>
         <div class="flow-body">
+          <div class="doc-hint">💡 <strong>Dica:</strong> Envie um arquivo por vez. PDFs grandes podem levar 1-2 minutos para analisar. O mais importante é o edital principal.</div>
           <div class="upload-zone" id="upload-zone"
             onclick="document.getElementById('file-input').click()"
             ondragover="event.preventDefault();this.classList.add('drag')"
             ondragleave="this.classList.remove('drag')"
             ondrop="onDrop(event)">
             <div class="uz-icon">📎</div>
-            <h4>Clique ou arraste os arquivos aqui</h4>
-            <p>PDF, XLSX, XLS • Máx. 5 arquivos • 10MB cada</p>
+            <h4>Clique para selecionar o arquivo</h4>
+            <p>PDF, XLSX, XLS • 1 arquivo por vez • Máx. 8MB</p>
           </div>
-          <input type="file" id="file-input" multiple accept=".pdf,.xlsx,.xls" style="display:none" onchange="onFileSelect(event)">
+          <input type="file" id="file-input" accept=".pdf,.xlsx,.xls" style="display:none" onchange="onFileSelect(event)">
           <div class="file-list" id="file-list"></div>
           <div class="row">
-            <button class="btn btn-lime" id="btn-docs" onclick="analisarComDocs()" style="display:none">Analisar com documentos →</button>
-            <button class="btn btn-ghost" onclick="analisarSemDocs()">Analisar sem documentos</button>
+            <button class="btn btn-lime" id="btn-docs" onclick="analisarComDoc()" style="display:none">Analisar documento →</button>
+            <button class="btn btn-ghost" onclick="analisarSemDocs()">Analisar sem documento</button>
           </div>
         </div>
       </div>
@@ -300,7 +303,7 @@ var cardN = 0;
 var today = new Date(); today.setHours(0,0,0,0);
 var calY = today.getFullYear(), calM = today.getMonth();
 var _dadosAtual = null;
-var _filesParaAnalisar = [];
+var _fileParaAnalisar = null;
 
 function atualizarBadge() { document.getElementById('bdg').textContent = salvos.length; }
 
@@ -394,28 +397,41 @@ async function buscarPNCP() {
   btn.disabled = false; btn.innerHTML = 'Buscar →';
 }
 
-function onFileSelect(event) { Array.from(event.target.files).forEach(adicionarArquivo); event.target.value = ''; }
-function onDrop(event) { event.preventDefault(); document.getElementById('upload-zone').classList.remove('drag'); Array.from(event.dataTransfer.files).forEach(adicionarArquivo); }
+function onFileSelect(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  adicionarArquivo(file);
+  event.target.value = '';
+}
+function onDrop(event) {
+  event.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag');
+  var file = event.dataTransfer.files[0];
+  if (file) adicionarArquivo(file);
+}
 function adicionarArquivo(file) {
-  if (_filesParaAnalisar.length >= 5) { toast('Máximo de 5 arquivos.', 'err'); return; }
-  if (file.size > 10 * 1024 * 1024) { toast(file.name + ' excede 10MB.', 'err'); return; }
+  if (file.size > 8 * 1024 * 1024) { toast('Arquivo excede 8MB. Use um PDF menor.', 'err'); return; }
   var ext = file.name.split('.').pop().toLowerCase();
   if (!['pdf','xlsx','xls'].includes(ext)) { toast('Formato não suportado.', 'err'); return; }
-  _filesParaAnalisar.push(file);
+  _fileParaAnalisar = file;
   renderFileList();
   document.getElementById('btn-docs').style.display = 'block';
 }
-function removerArquivo(idx) { _filesParaAnalisar.splice(idx,1); renderFileList(); if(!_filesParaAnalisar.length) document.getElementById('btn-docs').style.display='none'; }
+function removerArquivo() {
+  _fileParaAnalisar = null;
+  renderFileList();
+  document.getElementById('btn-docs').style.display = 'none';
+}
 function renderFileList() {
   var list = document.getElementById('file-list'); list.innerHTML = '';
-  _filesParaAnalisar.forEach(function(f,i){
-    var ext = f.name.split('.').pop().toLowerCase();
-    var ico = ext==='pdf'?'📄':'📊';
-    var size = f.size>1024*1024?(f.size/1024/1024).toFixed(1)+'MB':Math.round(f.size/1024)+'KB';
-    var item = document.createElement('div'); item.className='file-item'; item.id='fi-'+i;
-    item.innerHTML='<span class="fi-icon">'+ico+'</span><span class="fi-name">'+f.name+'</span><span class="fi-size">'+size+'</span><span class="fi-status" id="fis-'+i+'"></span><button class="fi-rm" onclick="removerArquivo('+i+')">✕</button>';
-    list.appendChild(item);
-  });
+  if (!_fileParaAnalisar) return;
+  var f = _fileParaAnalisar;
+  var ext = f.name.split('.').pop().toLowerCase();
+  var ico = ext==='pdf'?'📄':'📊';
+  var size = f.size>1024*1024?(f.size/1024/1024).toFixed(1)+'MB':Math.round(f.size/1024)+'KB';
+  var item = document.createElement('div'); item.className='file-item'; item.id='fi-0';
+  item.innerHTML='<span class="fi-icon">'+ico+'</span><span class="fi-name">'+f.name+'</span><span class="fi-size">'+size+'</span><span class="fi-status" id="fis-0"></span><button class="fi-rm" onclick="removerArquivo()">✕</button>';
+  list.appendChild(item);
 }
 
 async function fileToBase64(file) {
@@ -427,25 +443,32 @@ async function fileToBase64(file) {
   });
 }
 
-async function analisarComDocs() {
+async function analisarComDoc() {
   if (!_dadosAtual) { toast('Busque um processo primeiro.', 'err'); return; }
+  if (!_fileParaAnalisar) { toast('Selecione um arquivo.', 'err'); return; }
   var btn = document.getElementById('btn-docs');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Analisando...';
-  var documentos = [];
-  for (var i=0; i<_filesParaAnalisar.length; i++) {
-    var file = _filesParaAnalisar[i];
+  var fis = document.getElementById('fis-0');
+  var fi = document.getElementById('fi-0');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Lendo arquivo...';
+  if(fis){ fis.textContent='lendo...'; fis.className='fi-status lime'; }
+  if(fi){ fi.classList.add('processing'); }
+  try {
+    var file = _fileParaAnalisar;
     var ext = file.name.split('.').pop().toLowerCase();
-    var fis = document.getElementById('fis-'+i);
-    var fi = document.getElementById('fi-'+i);
-    if(fis){ fis.textContent='lendo...'; fis.className='fi-status lime'; }
     var b64 = await fileToBase64(file);
     var mediaType = ext==='pdf'?'application/pdf':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    documentos.push({ data: b64, mediaType: mediaType, nome: file.name });
-    if(fis){ fis.textContent='✓'; fis.className='fi-status cyan'; }
-    if(fi){ fi.classList.add('done'); }
+    if(fis){ fis.textContent='enviando...'; }
+    btn.innerHTML = '<span class="spin"></span>Analisando documento...';
+    var documentos = [{ data: b64, mediaType: mediaType, nome: file.name }];
+    await chamarAnalise(documentos);
+    if(fis){ fis.textContent='✓ ok'; fis.className='fi-status cyan'; }
+    if(fi){ fi.classList.remove('processing'); fi.classList.add('done'); }
+  } catch(e) {
+    if(fis){ fis.textContent='✗ erro'; fis.className='fi-status red'; }
+    if(fi){ fi.classList.remove('processing'); fi.classList.add('err'); }
+    toast('Erro ao processar arquivo: ' + e.message, 'err');
   }
-  await chamarAnalise(documentos);
-  btn.disabled = false; btn.innerHTML = 'Analisar com documentos →';
+  btn.disabled = false; btn.innerHTML = 'Analisar documento →';
 }
 
 async function analisarSemDocs() {
@@ -486,11 +509,11 @@ async function chamarAnalise(documentos) {
   document.getElementById('card2').style.display = 'none';
   document.getElementById('p2').className = 'step-pill done';
   document.getElementById('p2').textContent = '✓';
-  _filesParaAnalisar = [];
+  _fileParaAnalisar = null;
   document.getElementById('file-list').innerHTML = '';
   document.getElementById('btn-docs').style.display = 'none';
   resetar();
-  toast('Processo adicionado! Analisando com IA...', 'ok');
+  toast(documentos.length > 0 ? 'Documento enviado! Analisando...' : 'Analisando com IA...', 'ok');
   try {
     var resp = await fetch(BACKEND + '/api/analisar', {
       method: 'POST',
@@ -508,6 +531,16 @@ async function chamarAnalise(documentos) {
       if(txts[0]&&ai.resumo)   txts[0].textContent = ai.resumo;
       if(txts[2]&&ai.infoTec)  txts[2].textContent = ai.infoTec;
       if(txts[3]&&ai.volumes)  txts[3].textContent = ai.volumes;
+      if(ai.infoJuridica) {
+        var bodyEl = el.querySelector('.lic-body');
+        var jurEl = el.querySelector('.jur-sec');
+        if(!jurEl && bodyEl) {
+          var div = document.createElement('div');
+          div.className = 'jur-sec';
+          div.innerHTML = '<div class="sec-lbl">Informações Jurídicas</div><div class="sec-txt">'+ai.infoJuridica+'</div>';
+          bodyEl.insertBefore(div, bodyEl.children[2]);
+        }
+      }
     }
     recentes = recentes.filter(function(r){return r.id!==cardData.id;});
     recentes.unshift(cardData);
@@ -574,7 +607,7 @@ function criarCard(d, n) {
     '<div class="lic-body">'+
       '<div><div class="sec-lbl">Resumo do Projeto</div><div class="sec-txt">'+d.resumo+'</div></div>'+
       '<div><div class="sec-lbl">Informações do Processo</div><div class="sec-txt">'+d.infoProc+'</div></div>'+
-      (d.infoJuridica?'<div><div class="sec-lbl">Informações Jurídicas</div><div class="sec-txt">'+d.infoJuridica+'</div></div>':'')+
+      (d.infoJuridica?'<div class="jur-sec"><div class="sec-lbl">Informações Jurídicas</div><div class="sec-txt">'+d.infoJuridica+'</div></div>':'')+
       '<div><div class="sec-lbl">Informações Técnicas</div><div class="sec-txt">'+(d.infoTec||'—')+'</div></div>'+
       '<div><div class="sec-lbl">Volumes de Serviço</div><div class="sec-txt">'+(d.volumes||'—')+'</div></div>'+
     '</div>'+
