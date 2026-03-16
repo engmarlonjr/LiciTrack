@@ -526,7 +526,7 @@ async function chamarAnalise(documentos) {
     recentes.unshift(cardData);
     localStorage.setItem('lt_recentes', JSON.stringify(recentes.slice(0,20)));
     toast('Análise completa!', 'ok');
-  } catch(e) { console.error('Erro analise:', e); toast('Análise com IA falhou: ' + e.message, 'err'); }
+  } catch(e) { console.error('Erro analise:', e); toast('ERRO: ' + (e.message || JSON.stringify(e)), 'err'); }
 }
 
 function resetar() {
