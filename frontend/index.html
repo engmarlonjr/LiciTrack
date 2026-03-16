@@ -210,7 +210,10 @@ nav{padding:14px 10px;flex:1}
         </div>
       </div>
       <div id="recentes-section" style="display:none">
-        <div class="sec-header"><h3>PROCESSOS RECENTES</h3></div>
+        <div class="sec-header">
+          <h3>PROCESSOS RECENTES</h3>
+          <button class="sync-btn" onclick="limparRecentes()">🗑 Limpar recentes</button>
+        </div>
         <div id="resultados"></div>
       </div>
     </div>
@@ -394,15 +397,19 @@ function adicionarArquivo(file) {
   if (!['pdf','xlsx','xls'].includes(ext)) { toast('Formato não suportado.', 'err'); return; }
   _fileParaAnalisar = file;
   renderFileList();
-  document.getElementById('btn-docs').style.display = 'block';
+  var btnDocs = document.getElementById('btn-docs');
+  if (btnDocs) btnDocs.style.display = 'block';
 }
 function removerArquivo() {
   _fileParaAnalisar = null;
   renderFileList();
-  document.getElementById('btn-docs').style.display = 'none';
+  var btnDocs = document.getElementById('btn-docs');
+  if (btnDocs) btnDocs.style.display = 'none';
 }
 function renderFileList() {
-  var list = document.getElementById('file-list'); list.innerHTML = '';
+  var list = document.getElementById('file-list');
+  if (!list) return;
+  list.innerHTML = '';
   if (!_fileParaAnalisar) return;
   var f = _fileParaAnalisar;
   var ext = f.name.split('.').pop().toLowerCase();
@@ -489,8 +496,10 @@ async function chamarAnalise(documentos) {
   
   
   _fileParaAnalisar = null;
-  document.getElementById('file-list').innerHTML = '';
-  document.getElementById('btn-docs').style.display = 'none';
+  var fileList = document.getElementById('file-list');
+  if (fileList) fileList.innerHTML = '';
+  var btnDocs = document.getElementById('btn-docs');
+  if (btnDocs) btnDocs.style.display = 'none';
   resetar();
   toast(documentos.length > 0 ? 'Documento enviado! Analisando...' : 'Analisando com IA...', 'ok');
   try {
@@ -527,6 +536,15 @@ async function chamarAnalise(documentos) {
     localStorage.setItem('lt_recentes', JSON.stringify(recentes.slice(0,20)));
     toast('Análise completa!', 'ok');
   } catch(e) { console.error('Erro analise:', e); toast('ERRO: ' + (e.message || JSON.stringify(e)), 'err'); }
+}
+
+function limparRecentes() {
+  recentes = [];
+  localStorage.removeItem('lt_recentes');
+  document.getElementById('resultados').innerHTML = '';
+  document.getElementById('recentes-section').style.display = 'none';
+  cardN = 0;
+  toast('Recentes apagados.', 'ok');
 }
 
 function resetar() {
