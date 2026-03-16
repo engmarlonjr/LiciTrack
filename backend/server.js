@@ -37,118 +37,84 @@ app.get('/api/pncp', async (req, res) => {
 });
 
 app.post('/api/analisar', async (req, res) => {
-  console.log('=== REQUISIÇÃO DE ANÁLISE RECEBIDA ===');
+  console.log('=== ANÁLISE RECEBIDA ===');
   const { dados, urlEdital } = req.body;
-  console.log('urlEdital:', urlEdital);
-  console.log('ANTHROPIC_KEY presente:', !!ANTHROPIC_KEY);
-
   if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'Chave de API não configurada' });
 
   try {
     let docParaAnalisar = null;
-    let docSecundario = null;
 
     if (urlEdital) {
       const m = urlEdital.match(/editais\/(\d+)\/(\d+)\/(\d+)/);
       if (m) {
-        console.log('Buscando arquivos PNCP...');
         const arquivosUrl = `https://pncp.gov.br/api/pncp/v1/orgaos/${m[1]}/compras/${m[2]}/${m[3]}/arquivos`;
         const arquivosResp = await fetch(arquivosUrl);
-        
         if (arquivosResp.ok) {
           const arquivos = await arquivosResp.json();
-          console.log('Arquivos encontrados:', arquivos.length);
-          
-          // Procura edital principal
-          const edital = arquivos.find(a => 
+          console.log('Arquivos:', arquivos.length);
+
+          const edital = arquivos.find(a =>
             a.titulo.toLowerCase().includes('edital') ||
             a.tipoDocumentoNome === 'Edital'
-          );
-          
-          // Procura orçamento sintético
-          const orcamento = arquivos.find(a => 
-            a.titulo.toLowerCase().includes('sintetico') ||
-            a.titulo.toLowerCase().includes('sintético') ||
-            a.titulo.toLowerCase().includes('sintet') ||
-            (a.titulo.toLowerCase().includes('orcamento') && a.titulo.toLowerCase().includes('sint'))
-          );
+          ) || arquivos[0];
 
-          const selecionados = [edital, orcamento].filter(Boolean);
-          console.log('Selecionados:', selecionados.map(a => a?.titulo));
-
-          if (selecionados.length > 0) {
-            const docsAnalisados = [];
-            for (const arq of selecionados) {
-              console.log('Baixando:', arq.titulo);
-              const pdfResp = await fetch(arq.url);
-              if (pdfResp.ok) {
-                const buffer = await pdfResp.buffer();
-                const ext = arq.titulo.split('.').pop().toLowerCase();
-                const mediaType = ext === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-                console.log('Baixado:', arq.titulo, Math.round(buffer.length/1024), 'KB');
-                docsAnalisados.push({ data: buffer.toString('base64'), mediaType, nome: arq.titulo });
-              }
-            }
-            if (docsAnalisados.length > 0) docParaAnalisar = docsAnalisados[0];
-            if (docsAnalisados.length > 1) docSecundario = docsAnalisados[1];
-          } else if (arquivos.length > 0) {
-            // Fallback: pega o primeiro arquivo disponível
-            const arq = arquivos[0];
-            console.log('Fallback - baixando:', arq.titulo);
-            const pdfResp = await fetch(arq.url);
+          if (edital) {
+            const pdfResp = await fetch(edital.url);
             if (pdfResp.ok) {
               const buffer = await pdfResp.buffer();
-              docParaAnalisar = { data: buffer.toString('base64'), mediaType: 'application/pdf', nome: arq.titulo };
+              console.log('PDF:', edital.titulo, Math.round(buffer.length/1024)+'KB');
+              docParaAnalisar = { data: buffer.toString('base64'), mediaType: 'application/pdf', nome: edital.titulo };
             }
           }
-        } else {
-          console.log('Erro ao buscar arquivos:', arquivosResp.status);
         }
       }
     }
 
-    let prompt, messages;
+    let messages;
+    const prompt = `Você é especialista em licitações de obras públicas no Brasil com 15 anos de experiência.
+Analise este documento e retorne SOMENTE este JSON válido, sem markdown, sem texto antes ou depois:
+{"resumo":"2-3 frases sobre objeto local e orgao","infoJuridica":"amparo legal prazo vigencia garantia penalidades","infoTec":"tipo obra local prazo execucao documentos obrigatorios para habilitacao listados","volumes":"principais itens curva ABC com quantidades e valores expectativa receita por mes principais materiais"}`;
 
     if (docParaAnalisar) {
-      console.log('Analisando com documento(s):', docParaAnalisar.nome, docSecundario?.nome || '');
-      prompt = `Você é especialista em licitações de obras públicas no Brasil. Analise este(s) documento(s) e retorne SOMENTE JSON puro sem markdown:
-{"resumo":"2-3 frases sobre o objeto, local e órgão","infoJuridica":"amparo legal, prazo vigência, garantia, penalidades","infoTec":"tipo obra, local, prazo execução, documentos obrigatórios para habilitação (liste cada um)","volumes":"principais itens curva ABC com qtd e valor, expectativa receita/mês, principais materiais"}
-DADOS DO PROCESSO: ` + JSON.stringify(dados).substring(0, 500);
-      const content = [
-        { type: 'document', source: { type: 'base64', media_type: docParaAnalisar.mediaType, data: docParaAnalisar.data } }
-      ];
-      if (docSecundario) {
-        content.push({ type: 'document', source: { type: 'base64', media_type: docSecundario.mediaType, data: docSecundario.data } });
-      }
-      content.push({ type: 'text', text: prompt });
-      messages = [{ role: 'user', content }];
+      messages = [{ role: 'user', content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: docParaAnalisar.data } },
+        { type: 'text', text: prompt }
+      ]}];
     } else {
-      console.log('Analisando sem documento');
-      prompt = `Analise esta licitação e retorne SOMENTE JSON puro: {"resumo":"2-3 frases","infoTec":"tipo obra, local, prazo, documentos obrigatórios estimados","volumes":"principais serviços estimados, receita/mês estimada"} DADOS: ` + JSON.stringify(dados).substring(0, 2000);
-      messages = [{ role: 'user', content: prompt }];
+      messages = [{ role: 'user', content: prompt + '\n\nDADOS: ' + JSON.stringify(dados).substring(0, 2000) }];
     }
 
-    console.log('Chamando Claude...');
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1500, messages })
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2000, messages })
     });
 
     const result = await resp.json();
-    console.log('Claude status:', result.type, result.error?.message || 'OK');
-
-    if (result.error) return res.status(500).json({ error: result.error.message });
+    console.log('Claude tipo:', result.type);
+    if (result.error) {
+      console.error('Claude erro:', result.error.message);
+      return res.status(500).json({ error: result.error.message });
+    }
 
     const txt = (result.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    console.log('Resposta raw (200 chars):', txt.substring(0, 200));
+
     let ai = {};
-    try { ai = JSON.parse(txt); } catch(e) { const m2 = txt.match(/\{[\s\S]*\}/); if (m2) try { ai = JSON.parse(m2[0]); } catch(e2) {} }
-    
-    console.log('Análise concluída. Campos:', Object.keys(ai));
+    try {
+      ai = JSON.parse(txt);
+    } catch(e) {
+      const m2 = txt.match(/\{[\s\S]*\}/);
+      if (m2) {
+        try { ai = JSON.parse(m2[0]); } catch(e2) { console.log('Parse erro:', e2.message); }
+      }
+    }
+
+    console.log('Campos extraídos:', Object.keys(ai));
     res.json(ai);
 
   } catch (e) {
-    console.error('ERRO GERAL:', e.message);
+    console.error('ERRO:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
