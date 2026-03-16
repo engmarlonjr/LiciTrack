@@ -46,6 +46,7 @@ app.post('/api/analisar', async (req, res) => {
 
   try {
     let docParaAnalisar = null;
+    let docSecundario = null;
 
     if (urlEdital) {
       const m = urlEdital.match(/editais\/(\d+)\/(\d+)\/(\d+)/);
@@ -58,19 +59,46 @@ app.post('/api/analisar', async (req, res) => {
           const arquivos = await arquivosResp.json();
           console.log('Arquivos encontrados:', arquivos.length);
           
-          const edital = arquivos.find(a => a.tipoDocumentoNome === 'Edital') || arquivos[0];
+          // Procura edital principal
+          const edital = arquivos.find(a => 
+            a.titulo.toLowerCase().includes('edital') ||
+            a.tipoDocumentoNome === 'Edital'
+          );
           
-          if (edital) {
-            console.log('Baixando:', edital.titulo);
-            const pdfResp = await fetch(edital.url);
+          // Procura orçamento sintético
+          const orcamento = arquivos.find(a => 
+            a.titulo.toLowerCase().includes('sintetico') ||
+            a.titulo.toLowerCase().includes('sintético') ||
+            a.titulo.toLowerCase().includes('sintet') ||
+            (a.titulo.toLowerCase().includes('orcamento') && a.titulo.toLowerCase().includes('sint'))
+          );
+
+          const selecionados = [edital, orcamento].filter(Boolean);
+          console.log('Selecionados:', selecionados.map(a => a?.titulo));
+
+          if (selecionados.length > 0) {
+            const docsAnalisados = [];
+            for (const arq of selecionados) {
+              console.log('Baixando:', arq.titulo);
+              const pdfResp = await fetch(arq.url);
+              if (pdfResp.ok) {
+                const buffer = await pdfResp.buffer();
+                const ext = arq.titulo.split('.').pop().toLowerCase();
+                const mediaType = ext === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                console.log('Baixado:', arq.titulo, Math.round(buffer.length/1024), 'KB');
+                docsAnalisados.push({ data: buffer.toString('base64'), mediaType, nome: arq.titulo });
+              }
+            }
+            if (docsAnalisados.length > 0) docParaAnalisar = docsAnalisados[0];
+            if (docsAnalisados.length > 1) docSecundario = docsAnalisados[1];
+          } else if (arquivos.length > 0) {
+            // Fallback: pega o primeiro arquivo disponível
+            const arq = arquivos[0];
+            console.log('Fallback - baixando:', arq.titulo);
+            const pdfResp = await fetch(arq.url);
             if (pdfResp.ok) {
               const buffer = await pdfResp.buffer();
-              console.log('PDF baixado:', Math.round(buffer.length/1024), 'KB');
-              docParaAnalisar = {
-                data: buffer.toString('base64'),
-                mediaType: 'application/pdf',
-                nome: edital.titulo
-              };
+              docParaAnalisar = { data: buffer.toString('base64'), mediaType: 'application/pdf', nome: arq.titulo };
             }
           }
         } else {
@@ -82,14 +110,18 @@ app.post('/api/analisar', async (req, res) => {
     let prompt, messages;
 
     if (docParaAnalisar) {
-      console.log('Analisando com documento:', docParaAnalisar.nome);
-      prompt = `Você é especialista em licitações de obras públicas no Brasil. Analise este documento e retorne SOMENTE JSON puro sem markdown:
+      console.log('Analisando com documento(s):', docParaAnalisar.nome, docSecundario?.nome || '');
+      prompt = `Você é especialista em licitações de obras públicas no Brasil. Analise este(s) documento(s) e retorne SOMENTE JSON puro sem markdown:
 {"resumo":"2-3 frases sobre o objeto, local e órgão","infoJuridica":"amparo legal, prazo vigência, garantia, penalidades","infoTec":"tipo obra, local, prazo execução, documentos obrigatórios para habilitação (liste cada um)","volumes":"principais itens curva ABC com qtd e valor, expectativa receita/mês, principais materiais"}
 DADOS DO PROCESSO: ` + JSON.stringify(dados).substring(0, 500);
-      messages = [{ role: 'user', content: [
-        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: docParaAnalisar.data } },
-        { type: 'text', text: prompt }
-      ]}];
+      const content = [
+        { type: 'document', source: { type: 'base64', media_type: docParaAnalisar.mediaType, data: docParaAnalisar.data } }
+      ];
+      if (docSecundario) {
+        content.push({ type: 'document', source: { type: 'base64', media_type: docSecundario.mediaType, data: docSecundario.data } });
+      }
+      content.push({ type: 'text', text: prompt });
+      messages = [{ role: 'user', content }];
     } else {
       console.log('Analisando sem documento');
       prompt = `Analise esta licitação e retorne SOMENTE JSON puro: {"resumo":"2-3 frases","infoTec":"tipo obra, local, prazo, documentos obrigatórios estimados","volumes":"principais serviços estimados, receita/mês estimada"} DADOS: ` + JSON.stringify(dados).substring(0, 2000);
