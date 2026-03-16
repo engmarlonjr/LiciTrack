@@ -53,17 +53,30 @@ app.post('/api/analisar', async (req, res) => {
           const arquivos = await arquivosResp.json();
           console.log('Arquivos:', arquivos.length);
 
-          const edital = arquivos.find(a =>
-            a.titulo.toLowerCase().includes('edital') ||
-            a.tipoDocumentoNome === 'Edital'
-          ) || arquivos[0];
+          const MAX_PDF = 5 * 1024 * 1024;
+          const candidatos = [
+            ...arquivos.filter(a => a.titulo.toLowerCase().includes('edital') || a.tipoDocumentoNome === 'Edital'),
+            ...arquivos.filter(a => !a.titulo.toLowerCase().includes('edital') && a.tipoDocumentoNome !== 'Edital')
+          ];
 
-          if (edital) {
-            const pdfResp = await fetch(edital.url);
-            if (pdfResp.ok) {
+          for (const arq of candidatos) {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 15000);
+            try {
+              const pdfResp = await fetch(arq.url, { signal: ctrl.signal });
+              if (!pdfResp.ok) { console.log('PDF skip (status):', arq.titulo); continue; }
               const buffer = await pdfResp.buffer();
-              console.log('PDF:', edital.titulo, Math.round(buffer.length/1024)+'KB');
-              docParaAnalisar = { data: buffer.toString('base64'), mediaType: 'application/pdf', nome: edital.titulo };
+              clearTimeout(timer);
+              if (buffer.length > MAX_PDF) {
+                console.log('PDF skip (>5MB):', arq.titulo, Math.round(buffer.length/1024)+'KB');
+                continue;
+              }
+              console.log('PDF:', arq.titulo, Math.round(buffer.length/1024)+'KB');
+              docParaAnalisar = { data: buffer.toString('base64'), mediaType: 'application/pdf', nome: arq.titulo };
+              break;
+            } catch(e) {
+              clearTimeout(timer);
+              console.log('PDF skip (erro):', arq.titulo, e.message);
             }
           }
         }
