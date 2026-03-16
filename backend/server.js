@@ -100,6 +100,7 @@ Analise este documento e retorne SOMENTE este JSON válido, sem markdown, sem te
     const txt = (result.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
     console.log('Resposta raw (200 chars):', txt.substring(0, 200));
 
+    console.log('Conteúdo completo de txt:', txt);
     let ai = {};
     try {
       ai = JSON.parse(txt);
