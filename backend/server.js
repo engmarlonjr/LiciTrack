@@ -81,12 +81,13 @@ Analise este documento e retorne SOMENTE este JSON válido, sem markdown, sem te
         { type: 'text', text: prompt }
       ]}];
     } else {
-      messages = [{ role: 'user', content: prompt + '\n\nDADOS: ' + JSON.stringify(dados).substring(0, 2000) }];
+      const dadosTxt = JSON.stringify(dados, null, 0);
+      messages = [{ role: 'user', content: prompt + '\n\nDADOS: ' + dadosTxt.substring(0, 8000) }];
     }
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'pdfs-2024-09-25' },
       body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2000, messages })
     });
 
@@ -102,12 +103,17 @@ Analise este documento e retorne SOMENTE este JSON válido, sem markdown, sem te
 
     console.log('Conteúdo completo de txt:', txt);
     let ai = {};
+    // Remove markdown code fences if present (```json ... ``` or ``` ... ```)
+    const stripped = txt.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     try {
-      ai = JSON.parse(txt);
+      ai = JSON.parse(stripped);
     } catch(e) {
-      const m2 = txt.match(/\{[\s\S]*\}/);
+      // Fallback: extract the first complete JSON object
+      const m2 = stripped.match(/\{[\s\S]*\}/);
       if (m2) {
-        try { ai = JSON.parse(m2[0]); } catch(e2) { console.log('Parse erro:', e2.message); }
+        try { ai = JSON.parse(m2[0]); } catch(e2) { console.log('Parse erro:', e2.message, '| trecho:', m2[0].substring(0, 200)); }
+      } else {
+        console.log('Nenhum JSON encontrado na resposta. txt completo:', txt);
       }
     }
 
