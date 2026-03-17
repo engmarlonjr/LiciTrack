@@ -514,6 +514,11 @@ async function chamarAnalise(documentos) {
     if (ai.infoJuridica) cardData.infoJuridica = ai.infoJuridica;
     if (ai.infoTec)      cardData.infoTec      = ai.infoTec;
     if (ai.volumes)      cardData.volumes      = ai.volumes;
+    fetch(BACKEND + '/api/salvos', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(cardData)
+    }).catch(function(e){ console.error('Erro ao salvar análise:', e); });
     var el = document.getElementById('card-'+cardData.id);
     if (el) {
       var txts = el.querySelectorAll('.sec-txt');
