@@ -151,6 +151,7 @@ nav{padding:14px 10px;flex:1}
 .modal-foot{padding:12px 22px;border-top:1px solid var(--b1);background:var(--s2);display:flex;gap:10px;flex-wrap:wrap}
 .modal-foot a{color:var(--cyan);font-size:.75rem;text-decoration:none;font-family:'Fira Code',monospace;background:rgba(53,212,241,.08);border:1px solid rgba(53,212,241,.2);padding:6px 12px;border-radius:6px}
 .modal-foot a:hover{background:rgba(53,212,241,.15)}
+.modal-foot .lic-btn{font-size:.75rem;padding:6px 12px;cursor:pointer}
 .empty{text-align:center;padding:52px 20px;color:var(--txt3)}
 .empty .ei{font-size:2.2rem;margin-bottom:10px}
 .empty h3{font-family:'Barlow Condensed',sans-serif;font-size:1rem;letter-spacing:.05em;color:var(--txt2);margin-bottom:5px}
@@ -634,12 +635,62 @@ function abrirModal(d) {
     (d.infoJuridica?'<div><div class="sec-lbl">Informações Jurídicas</div><div class="sec-txt">'+d.infoJuridica+'</div></div>':'')+
     '<div><div class="sec-lbl">Informações Técnicas</div><div class="sec-txt">'+(d.infoTec||'—')+'</div></div>'+
     '<div><div class="sec-lbl">Volumes de Serviço</div><div class="sec-txt">'+(d.volumes||'—')+'</div></div>';
+  var needsReanalisar = d.infoTec === '• Analisando...' || d.volumes === '• Analisando...';
   document.getElementById('m-foot').innerHTML =
     '<a href="'+(d.linkEdi||'#')+'" target="_blank">🔗 Abrir no PNCP</a>'+
-    '<a href="'+(d.linkOri||'#')+'" target="_blank">↗ Compras.gov.br</a>';
+    '<a href="'+(d.linkOri||'#')+'" target="_blank">↗ Compras.gov.br</a>'+
+    (needsReanalisar ? '<button id="btn-reanalisar" class="lic-btn" onclick=\'reanalisarModal('+JSON.stringify(d).replace(/'/g,"&#39;")+')\'>🔄 Reanalisar</button>' : '');
   document.getElementById('modal-overlay').classList.add('show');
 }
 function fecharModalBtn() { document.getElementById('modal-overlay').classList.remove('show'); }
+
+async function reanalisarModal(d) {
+  if (!BACKEND) { toast('Configure o backend em ⚙️ Config.', 'err'); return; }
+  var btn = document.getElementById('btn-reanalisar');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Reanalisando...'; }
+  toast('Reanalisando com IA...', 'ok');
+  try {
+    var dadosSint = {
+      numeroControlePNCP: d.pncp,
+      objetoCompra: d.objeto,
+      valorTotalEstimado: d.val,
+      situacaoCompraNome: d.situ,
+      modalidadeNome: d.modal,
+      _urlOrigem: d.linkEdi || d.linkOri,
+      linkSistemaOrigem: d.linkOri
+    };
+    var resp = await fetch(BACKEND + '/api/analisar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ dados: dadosSint, documentos: [], urlEdital: d.linkEdi || d.linkOri })
+    });
+    var ai = await resp.json();
+    if (ai.resumo)       d.resumo       = ai.resumo;
+    if (ai.infoJuridica) d.infoJuridica = ai.infoJuridica;
+    if (ai.infoTec)      d.infoTec      = ai.infoTec;
+    if (ai.volumes)      d.volumes      = ai.volumes;
+    var el = document.getElementById('card-'+d.id);
+    if (el) {
+      el.dataset.json = JSON.stringify(d);
+      var txts = el.querySelectorAll('.sec-txt');
+      if(txts[0]&&ai.resumo)   txts[0].textContent = ai.resumo;
+      if(txts[2]&&ai.infoTec)  txts[2].textContent = ai.infoTec;
+      if(txts[3]&&ai.volumes)  txts[3].textContent = ai.volumes;
+    }
+    var si = salvos.findIndex(function(s){return s.id===d.id;});
+    if (si>=0) { salvos[si] = d; }
+    fetch(BACKEND + '/api/salvos', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(d)
+    }).catch(function(e){ console.error('Erro ao salvar análise:', e); });
+    abrirModal(d);
+    toast('Análise completa!', 'ok');
+  } catch(e) {
+    toast('Erro ao reanalisar: ' + (e.message || e), 'err');
+    if (btn) { btn.disabled = false; btn.innerHTML = '🔄 Reanalisar'; }
+  }
+}
 function fecharModal(e) { if(e.target===document.getElementById('modal-overlay')) fecharModalBtn(); }
 
 function renderSalvos() {
