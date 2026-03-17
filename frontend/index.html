@@ -619,6 +619,9 @@ function criarCard(d, n) {
 }
 
 function abrirModal(d) {
+  var candidatos = [].concat(recentes || [], salvos || []);
+  var atualizado = candidatos.find(function(r){ return r.id === d.id && r.infoTec && r.infoTec !== '• Analisando...'; });
+  if (atualizado) d = atualizado;
   document.getElementById('m-code').textContent   = d.codigo;
   document.getElementById('m-titulo').textContent = d.objeto;
   document.getElementById('m-meta').innerHTML =
