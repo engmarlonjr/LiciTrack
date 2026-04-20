@@ -12,12 +12,16 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000
 });
 
 async function initDB() {
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS salvos (id TEXT PRIMARY KEY, dados JSONB NOT NULL, criado_em TIMESTAMP DEFAULT NOW(), atualizado_em TIMESTAMP DEFAULT NOW())`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS salvos_atualizado_em_idx ON salvos (atualizado_em DESC)`);
     console.log('Banco de dados inicializado');
   } catch(e) { console.error('Erro banco:', e.message); }
 }
@@ -54,30 +58,38 @@ app.post('/api/analisar', async (req, res) => {
           console.log('Arquivos:', arquivos.length);
 
           const MAX_PDF = 5 * 1024 * 1024;
-          const candidatos = [
-            ...arquivos.filter(a => a.titulo.toLowerCase().includes('edital') || a.tipoDocumentoNome === 'Edital'),
-            ...arquivos.filter(a => !a.titulo.toLowerCase().includes('edital') && a.tipoDocumentoNome !== 'Edital')
-          ];
+          const editais = arquivos.filter(a => a.titulo.toLowerCase().includes('edital') || a.tipoDocumentoNome === 'Edital');
+          const outros = arquivos.filter(a => !a.titulo.toLowerCase().includes('edital') && a.tipoDocumentoNome !== 'Edital');
+          const candidatos = [...editais, ...outros];
 
-          for (const arq of candidatos) {
+          async function tentarBaixarPDF(arq) {
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), 15000);
             try {
               const pdfResp = await fetch(arq.url, { signal: ctrl.signal });
-              if (!pdfResp.ok) { console.log('PDF skip (status):', arq.titulo); continue; }
-              const buffer = await pdfResp.buffer();
               clearTimeout(timer);
+              if (!pdfResp.ok) { console.log('PDF skip (status):', arq.titulo); return null; }
+              const buffer = await pdfResp.buffer();
               if (buffer.length > MAX_PDF) {
                 console.log('PDF skip (>5MB):', arq.titulo, Math.round(buffer.length/1024)+'KB');
-                continue;
+                return null;
               }
               console.log('PDF:', arq.titulo, Math.round(buffer.length/1024)+'KB');
-              docParaAnalisar = { data: buffer.toString('base64'), mediaType: 'application/pdf', nome: arq.titulo };
-              break;
+              return { data: buffer.toString('base64'), mediaType: 'application/pdf', nome: arq.titulo };
             } catch(e) {
               clearTimeout(timer);
               console.log('PDF skip (erro):', arq.titulo, e.message);
+              return null;
             }
+          }
+
+          // Tenta editais em paralelo primeiro, depois os demais
+          const grupos = [editais.slice(0, 3), outros.slice(0, 3)];
+          for (const grupo of grupos) {
+            if (!grupo.length) continue;
+            const resultados = await Promise.all(grupo.map(tentarBaixarPDF));
+            const encontrado = resultados.find(r => r !== null);
+            if (encontrado) { docParaAnalisar = encontrado; break; }
           }
         }
       }
