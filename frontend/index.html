@@ -518,7 +518,7 @@ async function chamarAnalise(documentos) {
     fetch(BACKEND + '/api/salvos', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(cardData)
+      body: JSON.stringify({ id: cardData.id, dados: cardData })
     }).catch(function(e){ console.error('Erro ao salvar análise:', e); });
     var el = document.getElementById('card-'+cardData.id);
     if (el) {
@@ -682,7 +682,7 @@ async function reanalisarModal(d) {
     fetch(BACKEND + '/api/salvos', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(d)
+      body: JSON.stringify({ id: d.id, dados: d })
     }).catch(function(e){ console.error('Erro ao salvar análise:', e); });
     abrirModal(d);
     toast('Análise completa!', 'ok');
