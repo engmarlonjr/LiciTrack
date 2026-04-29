@@ -518,10 +518,11 @@ async function chamarAnalise(documentos) {
     fetch(BACKEND + '/api/salvos', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(cardData)
+      body: JSON.stringify({ id: cardData.id, dados: cardData })
     }).catch(function(e){ console.error('Erro ao salvar análise:', e); });
     var el = document.getElementById('card-'+cardData.id);
     if (el) {
+      el.dataset.json = JSON.stringify(cardData);
       var txts = el.querySelectorAll('.sec-txt');
       if(txts[0]&&ai.resumo)   txts[0].textContent = ai.resumo;
       if(txts[2]&&ai.infoTec)  txts[2].textContent = ai.infoTec;
@@ -682,7 +683,7 @@ async function reanalisarModal(d) {
     fetch(BACKEND + '/api/salvos', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(d)
+      body: JSON.stringify({ id: d.id, dados: d })
     }).catch(function(e){ console.error('Erro ao salvar análise:', e); });
     abrirModal(d);
     toast('Análise completa!', 'ok');
@@ -702,26 +703,35 @@ function renderSalvos() {
     document.getElementById('st-prox').textContent='—';
     return;
   }
-  var totalVal = salvos.reduce(function(a,s){return a+(s.val||0);},0);
-  var dias = salvos.filter(function(s){return s.dtEnc;}).map(function(s){return Math.ceil((new Date(s.dtEnc)-today)/86400000);}).filter(function(d){return d>0;});
-  var prox = dias.length ? Math.min.apply(null,dias) : null;
+  var todayMs = today.getTime();
+  var totalVal = 0, proxDias = Infinity;
+  // Pré-calcula dias e acumula totais em passagem única
+  var enriched = salvos.map(function(s){
+    totalVal += (s.val||0);
+    var d = s.dtEnc ? Math.ceil((new Date(s.dtEnc).getTime() - todayMs) / 86400000) : null;
+    if(d !== null && d > 0 && d < proxDias) proxDias = d;
+    return { s: s, d: d };
+  });
   document.getElementById('st-total').textContent = salvos.length;
   document.getElementById('st-valor').textContent = fmtShort(totalVal);
-  document.getElementById('st-prox').textContent  = prox!==null ? prox+'d' : '—';
-  list.innerHTML='';
-  salvos.slice().sort(function(a,b){return new Date(a.dtEnc||0)-new Date(b.dtEnc||0);}).forEach(function(s){
-    var d = s.dtEnc ? Math.ceil((new Date(s.dtEnc)-today)/86400000) : null;
+  document.getElementById('st-prox').textContent = proxDias !== Infinity ? proxDias+'d' : '—';
+  enriched.sort(function(a,b){ return (a.d===null?Infinity:a.d) - (b.d===null?Infinity:b.d); });
+  var frag = document.createDocumentFragment();
+  enriched.forEach(function(item){
+    var s = item.s, d = item.d;
     var dc = d===null?'amber':d<=0?'red':d<=5?'amber':'lime';
     var dl = d===null?'sem data':d<=0?'Encerrado':d+' dias';
-    var row=document.createElement('div'); row.className='saved-row';
-    row.onclick=function(){abrirModal(s);};
-    row.innerHTML=
+    var row = document.createElement('div'); row.className='saved-row';
+    row.onclick = function(){ abrirModal(s); };
+    row.innerHTML =
       '<div class="dot '+dc+'"></div>'+
       '<div class="saved-info"><div class="saved-title">'+s.objeto+'</div><div class="saved-sub">'+s.codigo+' · '+s.mun+' · '+fmtR(s.val)+'</div></div>'+
       '<div class="saved-right"><div class="saved-date">'+s.dtEncFmt+'<div class="days '+dc+'">'+dl+'</div></div>'+
       '<button class="rm-btn" onclick="event.stopPropagation();removerSalvoDB(\''+s.id+'\')">✕</button></div>';
-    list.appendChild(row);
+    frag.appendChild(row);
   });
+  list.innerHTML = '';
+  list.appendChild(frag);
 }
 
 async function removerSalvoDB(id) {
@@ -737,39 +747,46 @@ var DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 function navCal(d){calM+=d;if(calM>11){calM=0;calY++;}if(calM<0){calM=11;calY--;}renderCal();}
 function renderCal(){
   document.getElementById('cal-label').textContent=MESES[calM]+' '+calY;
-  var g=document.getElementById('cal-grid'); g.innerHTML='';
-  DIAS.forEach(function(d){var e=document.createElement('div');e.className='cal-dow';e.textContent=d;g.appendChild(e);});
+  var g=document.getElementById('cal-grid');
+  var todayMs=today.getTime();
   var first=new Date(calY,calM,1).getDay();
   var last=new Date(calY,calM+1,0).getDate();
   var prevLast=new Date(calY,calM,0).getDate();
+  // Pré-calcula dLeft para cada salvo relevante
   var evts={};
   salvos.forEach(function(s){
     if(!s.dtEnc) return;
     var dt=new Date(s.dtEnc);
     if(dt.getFullYear()===calY&&dt.getMonth()===calM){
-      var dn=dt.getDate(); if(!evts[dn])evts[dn]=[]; evts[dn].push(s);
+      var dn=dt.getDate();
+      if(!evts[dn])evts[dn]=[];
+      evts[dn].push({ s:s, dLeft:Math.ceil((dt.getTime()-todayMs)/86400000) });
     }
   });
-  for(var i=0;i<first;i++){var e=document.createElement('div');e.className='cal-day dim';e.innerHTML='<div class="cal-dn">'+(prevLast-first+i+1)+'</div>';g.appendChild(e);}
+  var frag=document.createDocumentFragment();
+  DIAS.forEach(function(d){var e=document.createElement('div');e.className='cal-dow';e.textContent=d;frag.appendChild(e);});
+  for(var i=0;i<first;i++){var e=document.createElement('div');e.className='cal-day dim';e.innerHTML='<div class="cal-dn">'+(prevLast-first+i+1)+'</div>';frag.appendChild(e);}
   for(var dd=1;dd<=last;dd++){
     var e=document.createElement('div'); e.className='cal-day';
-    var dt=new Date(calY,calM,dd); dt.setHours(0,0,0,0);
-    if(dt.getTime()===today.getTime()) e.classList.add('today');
-    e.innerHTML='<div class="cal-dn">'+dd+'</div><div class="cal-dots" id="dots-'+dd+'"></div>';
+    if(new Date(calY,calM,dd).setHours(0,0,0,0)===todayMs) e.classList.add('today');
+    e.innerHTML='<div class="cal-dn">'+dd+'</div>';
     if(evts[dd]){
-      var dots=e.querySelector('.cal-dots');
-      evts[dd].forEach(function(s){
-        var dLeft=Math.ceil((new Date(s.dtEnc)-today)/86400000);
-        var cls=dLeft<0?'red':dLeft<=5?'amber':'lime';
+      var dotsEl=document.createElement('div'); dotsEl.className='cal-dots';
+      evts[dd].forEach(function(item){
+        var cls=item.dLeft<0?'red':item.dLeft<=5?'amber':'lime';
         var dot=document.createElement('div'); dot.className='cal-dot '+cls;
-        dot.title=s.objeto; dot.textContent=s.codigo;
-        dot.onclick=function(){abrirModal(s);}; dots.appendChild(dot);
+        dot.title=item.s.objeto; dot.textContent=item.s.codigo;
+        dot.onclick=(function(sv){return function(){abrirModal(sv);};})(item.s);
+        dotsEl.appendChild(dot);
       });
+      e.appendChild(dotsEl);
     }
-    g.appendChild(e);
+    frag.appendChild(e);
   }
   var rem=(first+last)%7; rem=rem?7-rem:0;
-  for(var i=1;i<=rem;i++){var e=document.createElement('div');e.className='cal-day dim';e.innerHTML='<div class="cal-dn">'+i+'</div>';g.appendChild(e);}
+  for(var i=1;i<=rem;i++){var e=document.createElement('div');e.className='cal-day dim';e.innerHTML='<div class="cal-dn">'+i+'</div>';frag.appendChild(e);}
+  g.innerHTML='';
+  g.appendChild(frag);
 }
 
 function fmtR(v){if(!v&&v!==0)return'—';return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v);}
