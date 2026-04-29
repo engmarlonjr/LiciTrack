@@ -348,16 +348,27 @@ function go(v, btn) {
 }
 
 async function acordarBackend() {
-  try { await fetch(BACKEND + "/health"); } catch(e) {}
+  if (!BACKEND) return;
+  for (var i = 0; i < 3; i++) {
+    try {
+      var ctrl = new AbortController();
+      var timer = setTimeout(function(){ ctrl.abort(); }, 20000);
+      var r = await fetch(BACKEND + '/health', { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (r.ok) return;
+    } catch(e) {}
+  }
 }
 
 async function buscarPNCP() {
-  await acordarBackend();
   var url = document.getElementById('inp1').value.trim();
   if (!url) { toast('Cole o link do edital.', 'err'); return; }
   if (!BACKEND) { toast('Configure o backend em ⚙️ Config primeiro.', 'err'); return; }
   var btn = document.getElementById('btn-buscar');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Buscando...';
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Conectando...';
+  toast('Conectando ao servidor...', 'ok');
+  await acordarBackend();
+  btn.innerHTML = '<span class="spin"></span>Buscando...';
   try {
     var resp = await fetch(BACKEND + '/api/pncp?url=' + encodeURIComponent(url));
     if (!resp.ok) throw new Error('Erro ' + resp.status);
@@ -370,8 +381,6 @@ async function buscarPNCP() {
     _dadosAtual._urlOrigem = url;
     document.getElementById('p1').className = 'step-pill done';
     document.getElementById('p1').textContent = '✓';
-    
-    
     toast('Dados do PNCP carregados! Buscando documentos...', 'ok');
     chamarAnalise([]);
   } catch(e) {

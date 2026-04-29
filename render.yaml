@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: licitrack-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: licitrack-db
+          property: connectionString
+
+databases:
+  - name: licitrack-db
+    databaseName: licitrack
+    plan: free
