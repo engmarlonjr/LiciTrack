@@ -573,14 +573,19 @@ async function toggleSalvo(id) {
     if(btn){btn.className='lic-btn star';btn.textContent='☆ Salvar';}
     toast('Removido dos salvos.', 'ok');
   } else {
-    await fetch(BACKEND + '/api/salvos', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ id, dados: d })
-    });
-    salvos.push(d);
-    if(btn){btn.className='lic-btn starred';btn.textContent='⭐ Salvo';}
-    toast('Salvo! Toda a equipe pode ver agora.', 'ok');
+    try {
+      var saveResp = await fetch(BACKEND + '/api/salvos', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ id, dados: d })
+      });
+      if (!saveResp.ok) throw new Error('HTTP ' + saveResp.status);
+      salvos.push(d);
+      if(btn){btn.className='lic-btn starred';btn.textContent='⭐ Salvo';}
+      toast('Salvo! Toda a equipe pode ver agora.', 'ok');
+    } catch(e) {
+      toast('Erro ao salvar. Tente novamente.', 'err');
+    }
   }
   atualizarBadge();
 }
