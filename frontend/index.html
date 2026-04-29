@@ -522,6 +522,7 @@ async function chamarAnalise(documentos) {
     }).catch(function(e){ console.error('Erro ao salvar análise:', e); });
     var el = document.getElementById('card-'+cardData.id);
     if (el) {
+      el.dataset.json = JSON.stringify(cardData);
       var txts = el.querySelectorAll('.sec-txt');
       if(txts[0]&&ai.resumo)   txts[0].textContent = ai.resumo;
       if(txts[2]&&ai.infoTec)  txts[2].textContent = ai.infoTec;
