@@ -160,11 +160,16 @@ app.get('/api/salvos', async (req, res) => {
 
 app.post('/api/salvos', async (req, res) => {
   const { id, dados } = req.body;
+  console.log('POST /api/salvos - id:', id ? id.substring(0,20) : 'AUSENTE', '| dados:', dados ? 'presente' : 'AUSENTE');
   if (!id || !dados) return res.status(400).json({ error: 'Dados inválidos' });
   try {
     await pool.query(`INSERT INTO salvos (id, dados, atualizado_em) VALUES ($1, $2, NOW()) ON CONFLICT (id) DO UPDATE SET dados = $2, atualizado_em = NOW()`, [id, dados]);
+    console.log('Salvo com sucesso:', id.substring(0,20));
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) {
+    console.error('Erro ao salvar no banco:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/salvos/:id', async (req, res) => {
