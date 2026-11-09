@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "api/analisar.js": { "maxDuration": 60 },
+    "api/salvos.js": { "maxDuration": 10 },
+    "api/salvos/[id].js": { "maxDuration": 10 },
+    "api/pncp.js": { "maxDuration": 10 },
+    "api/health.js": { "maxDuration": 10 }
+  }
+}
